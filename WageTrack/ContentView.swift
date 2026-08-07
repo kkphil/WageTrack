@@ -1,24 +1,67 @@
-//
-//  ContentView.swift
-//  WageTrack
-//
-//  Created by Philip Kurth on 17.01.26.
-//
-
 import SwiftUI
+import SwiftData
+
 
 struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Shift.date, order: .reverse) private var shifts: [Shift]
+    
+    @State private var showingAddSheet = false
+    
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        NavigationStack {
+            VStack(spacing: 0){
+                HStack {
+                    Text("Meine Schichten")
+                        .padding(.leading)
+                        .font(.largeTitle)
+                        .bold()
+                        .lineLimit(1)
+                    Text("(\(shifts.count))")
+                        .foregroundStyle(.gray)
+                        .fontWeight(.semibold)
+                        .font(.largeTitle)
+                        .bold()
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 10)
+                
+                List {
+                    ForEach(shifts) { shift in
+                        HStack {
+                            Text(shift.date.format("dd.MM.yyyy"))
+                            Spacer()
+                            Text("\(shift.totalEarnings, specifier: "%.2f") €")
+                                .fontWeight(.bold)
+                        }
+                    }
+                    .onDelete { offsets in
+                        for index in offsets {
+                            modelContext.delete(shifts[index])
+                        }
+                    }
+                }
+            }
+            .toolbar {
+                Button(action: {
+                    showingAddSheet = true
+                }) {
+                    Label("Hinzufügen", systemImage: "plus")
+                }
+            }
+            .sheet(isPresented: $showingAddSheet) {
+                AddShiftView()
+            }
         }
-        .padding()
     }
 }
 
-#Preview {
-    ContentView()
+
+extension Date {
+    func format(_ format: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = format
+        return formatter.string(from: self)
+    }
 }
