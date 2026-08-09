@@ -29,12 +29,8 @@ struct ContentView: View {
                 
                 List {
                     ForEach(shifts) { shift in
-                        HStack {
-                            Text(shift.date.format("dd.MM.yyyy"))
-                            Spacer()
-                            Text("\(shift.totalEarnings, specifier: "%.2f") €")
-                                .fontWeight(.bold)
-                        }
+                        ListEntryView(shift: shift)
+                            .listRowBackground(Color(.secondarySystemBackground))
                     }
                     .onDelete { offsets in
                         for index in offsets {
