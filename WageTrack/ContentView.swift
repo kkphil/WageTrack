@@ -28,16 +28,22 @@ struct ContentView: View {
                 .padding(.bottom, 10)
                 
                 List {
-                    ForEach(shifts) { shift in
-                        ListEntryView(shift: shift)
-                            .listRowBackground(Color(.secondarySystemBackground))
-                    }
-                    .onDelete { offsets in
-                        for index in offsets {
-                            modelContext.delete(shifts[index])
+                    ForEach(groupedShifts, id: \.month) { group in
+                        Section(header: Text(group.month)) {
+                            ForEach(group.shifts) { shift in
+                                ListEntryView(shift: shift)
+                                    .listRowBackground(Color(.secondarySystemBackground))
+                            }
+                            .onDelete { offsets in
+                                for index in offsets {
+                                    modelContext.delete(group.shifts[index])
+                                }
+                            }
                         }
                     }
                 }
+                .scrollContentBackground(.hidden)
+                .listStyle(SidebarListStyle())
             }
             .toolbar {
                 Button(action: {
@@ -51,6 +57,29 @@ struct ContentView: View {
             }
         }
     }
+    
+    private var groupedShifts: [(month: String, shifts: [Shift])] {
+        // Group shifts by their year and month
+        let grouped = Dictionary(grouping: shifts) { shift -> Date in
+            let components = Calendar.current.dateComponents([.year, .month], from: shift.date)
+            return Calendar.current.date(from: components) ?? shift.date
+        }
+        
+        // Sort the group keys (months) from newest to oldest
+        let sortedKeys = grouped.keys.sorted(by: >)
+        
+        // Format the key into a String like "Januar 2026" with German month names
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "de_DE")
+        formatter.dateFormat = "LLLL yyyy"
+        
+        return sortedKeys.map { key in
+            // Sort the shifts within the month from newest to oldest
+            let sortedShifts = grouped[key]!.sorted { $0.date > $1.date }
+            return (formatter.string(from: key), sortedShifts)
+        }
+    }
+
 }
 
 
