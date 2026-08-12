@@ -8,6 +8,9 @@ struct ContentView: View {
     
     @State private var showingAddSheet = false
     
+    @State private var showingDeleteAlert = false
+    @State private var shiftToDelete: Shift?
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 0){
@@ -35,8 +38,9 @@ struct ContentView: View {
                                     .listRowBackground(Color(.secondarySystemBackground))
                             }
                             .onDelete { offsets in
-                                for index in offsets {
-                                    modelContext.delete(group.shifts[index])
+                                if let index = offsets.first {
+                                    shiftToDelete = group.shifts[index]
+                                    showingDeleteAlert = true
                                 }
                             }
                         }
@@ -44,6 +48,20 @@ struct ContentView: View {
                 }
                 .scrollContentBackground(.hidden)
                 .listStyle(SidebarListStyle())
+                .alert("Schicht löschen", isPresented: $showingDeleteAlert) {
+                    Button("Abbrechen", role: .cancel) {
+                        shiftToDelete = nil // Bricht den Vorgang ab
+                    }
+                    Button("Löschen", role: .destructive) {
+                        // Wenn der User bestätigt, löschen wir den gemerkten Eintrag
+                        if let shift = shiftToDelete {
+                                modelContext.delete(shift)
+                        }
+                        shiftToDelete = nil
+                    }
+                } message: {
+                    Text("Möchtest du diese Schicht wirklich löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.")
+                }
             }
             .toolbar {
                 Button(action: {
