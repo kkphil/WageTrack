@@ -34,8 +34,10 @@ struct ContentView: View {
                     ForEach(groupedShifts, id: \.month) { group in
                         Section(header: Text(group.month)) {
                             ForEach(group.shifts) { shift in
-                                ListEntryView(shift: shift)
-                                    .listRowBackground(Color(.secondarySystemBackground))
+                                NavigationLink(destination: EditShiftView(shift: shift)) {
+                                    ListEntryView(shift: shift)
+                                }
+                                .listRowBackground(Color(.secondarySystemBackground))
                             }
                             .onDelete { offsets in
                                 if let index = offsets.first {
