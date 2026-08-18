@@ -14,6 +14,14 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0){
+                Text("Zusammenfassung")
+                    .font(.largeTitle)
+                    .bold()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                SummaryView()
+                    .padding(.bottom, 20)
+                    .padding(.top, 10)
                 HStack {
                     Text("Meine Schichten")
                         .padding(.leading)
