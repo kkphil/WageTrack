@@ -63,6 +63,9 @@ struct AddShiftView: View {
                     Button("Speichern") {
                         let newShift = Shift(date: date, startTime: start, endTime: end, breakMinutes: breakMin, hourlyWage: wage, tip: tip)
                         modelContext.insert(newShift)
+                    
+                        CSVManager.exportToCSV(shifts: shifts + [newShift])
+                        
                         dismiss()
                     }
                 }
@@ -76,6 +79,7 @@ struct AddShiftView: View {
 
 struct EditShiftView: View {
     @Bindable var shift: Shift
+    @Query private var allShifts: [Shift]
     
     var body: some View {
         Form {
@@ -121,5 +125,8 @@ struct EditShiftView: View {
             }
         }
         .navigationTitle("Bearbeiten")
+        .onDisappear {
+            CSVManager.exportToCSV(shifts: allShifts)
+        }
     }
 }
