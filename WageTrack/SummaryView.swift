@@ -12,8 +12,12 @@ import SwiftData
 struct SummaryView: View {
     @Query(sort: \Shift.date, order: .reverse) private var shifts: [Shift]
     
+    private var activeShifts: [Shift] {
+        shifts.filter { !$0.isArchived }
+    }
+
     private var totalHours: Double {
-        shifts.reduce(0) { $0 + durationInHours(from: $1.startTime, to: $1.endTime) }
+        activeShifts.reduce(0) { $0 + durationInHours(from: $1.startTime, to: $1.endTime) }
     }
     
     // NEU: Wandelt die Dezimalstunden (z.B. 25.5) in einen String (25:30h) um
@@ -29,18 +33,18 @@ struct SummaryView: View {
         }
     }
     
-    private var totalShifts: Int { shifts.count }
+    private var totalShifts: Int { activeShifts.count }
     
     private var totalEarnings: Double {
-        shifts.reduce(0) { $0 + $1.totalEarnings }
+        activeShifts.reduce(0) { $0 + $1.totalEarnings }
     }
     
     private var totalTips: Double {
-        shifts.reduce(0) { $0 + $1.tip }
+        activeShifts.reduce(0) { $0 + $1.tip }
     }
     
     private var totalEarningsWithoutTips: Double {
-        shifts.reduce(0) { $0 + ($1.totalEarnings - $1.tip) }
+        activeShifts.reduce(0) { $0 + ($1.totalEarnings - $1.tip) }
     }
     
     private var earningsThisMonthWithoutTips: Double {
@@ -49,13 +53,13 @@ struct SummaryView: View {
         let currentMonthIndex = calendar.component(.month, from: now)
         let currentYear = calendar.component(.year, from: now)
         
-        return shifts.filter { calendar.component(.month, from: $0.date) == currentMonthIndex && calendar.component(.year, from: $0.date) == currentYear }
+        return activeShifts.filter { calendar.component(.month, from: $0.date) == currentMonthIndex && calendar.component(.year, from: $0.date) == currentYear }
             .reduce(0) { $0 + ($1.totalEarnings - $1.tip) }
     }
     
     private var earningsThisYearWithoutTips: Double {
         let currentYear = Calendar.current.component(.year, from: Date())
-        return shifts.filter { Calendar.current.component(.year, from: $0.date) == currentYear }
+        return activeShifts.filter { Calendar.current.component(.year, from: $0.date) == currentYear }
             .reduce(0) { $0 + ($1.totalEarnings - $1.tip) }
     }
     
@@ -65,7 +69,7 @@ struct SummaryView: View {
         let currentYear = calendar.component(.year, from: now)
         let currentMonthIndex = calendar.component(.month, from: now)
 
-        let yearShifts = shifts.filter { calendar.component(.year, from: $0.date) == currentYear }
+        let yearShifts = activeShifts.filter { calendar.component(.year, from: $0.date) == currentYear }
         let totalYearlyEarnings = yearShifts.reduce(0) { $0 + ($1.totalEarnings - $1.tip) }
         
         guard currentMonthIndex > 0 else { return 0 }
@@ -77,7 +81,7 @@ struct SummaryView: View {
         let now = Date()
         let currentYear = calendar.component(.year, from: now)
 
-        let yearShifts = shifts.filter { calendar.component(.year, from: $0.date) == currentYear }
+        let yearShifts = activeShifts.filter { calendar.component(.year, from: $0.date) == currentYear }
         let totalYearlyEarnings = yearShifts.reduce(0) { $0 + ($1.totalEarnings - $1.tip) }
         
         return totalYearlyEarnings / 12.0

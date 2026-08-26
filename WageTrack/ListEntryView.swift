@@ -23,10 +23,14 @@ struct ListEntryView: View {
             }
             
             Spacer()
+            if shift.isArchived {
+                Image(systemName: "archivebox")
+            }
+            Spacer()
     
             Text("\(shift.totalEarnings, specifier: "%.2f") €")
                 .fontWeight(.bold)
                 .foregroundStyle(shift.tip > 0 ? .blue : .green)
-        }
+        }.opacity(shift.isArchived ? 0.4 : 1.0)
     }
 }

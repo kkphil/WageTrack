@@ -9,14 +9,16 @@ final class Shift {
     var breakMinutes: Int
     var hourlyWage: Double
     var tip: Double
+    var isArchived: Bool = false
     
-    init(date: Date = .now, startTime: Date = .now, endTime: Date = .now.addingTimeInterval(28800), breakMinutes: Int = 30, hourlyWage: Double = 14.00, tip: Double = 0) {
+    init(date: Date = .now, startTime: Date = .now, endTime: Date = .now.addingTimeInterval(28800), breakMinutes: Int = 30, hourlyWage: Double = 14.00, tip: Double = 0, isArchived: Bool = false) {
         self.date = date
         self.startTime = startTime
         self.endTime = endTime
         self.breakMinutes = breakMinutes
         self.hourlyWage = hourlyWage
         self.tip = tip
+        self.isArchived = isArchived
     }
     
     

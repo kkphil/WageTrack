@@ -3,8 +3,8 @@ import SwiftData
 
 struct CSVManager {
     static func exportToCSV(shifts: [Shift]) {
-        // 1. Header der CSV-Datei
-        var csvString = "Datum;Startzeit;Endzeit;Pause(Min);Stundenlohn;Trinkgeld;Gesamtverdienst\n"
+        // 1. Header der CSV-Datei um "Archiviert" erweitert
+        var csvString = "Datum;Startzeit;Endzeit;Pause(Min);Stundenlohn;Trinkgeld;Gesamtverdienst;Archiviert\n"
         
         // 2. Datenzeilen hinzufügen
         let dateFormatter = DateFormatter()
@@ -14,13 +14,15 @@ struct CSVManager {
         timeFormatter.dateFormat = "HH:mm"
         
         for shift in shifts {
+            let archivedStr = shift.isArchived ? "Ja" : "Nein"
             let row = "\(dateFormatter.string(from: shift.date));" +
                       "\(timeFormatter.string(from: shift.startTime));" +
                       "\(timeFormatter.string(from: shift.endTime));" +
                       "\(shift.breakMinutes);" +
                       "\(shift.hourlyWage);" +
                       "\(shift.tip);" +
-                      "\(String(format: "%.2f", shift.totalEarnings))\n"
+                      "\(String(format: "%.2f", shift.totalEarnings));" +
+                      "\(archivedStr)\n"
             csvString.append(row)
         }
         

@@ -12,6 +12,7 @@ struct AddShiftView: View {
     @State private var breakMin = 0
     @State private var wage = 14.0
     @State private var tip = 0.0
+    @State private var isArchived = false
 
     var body: some View {
         NavigationStack {
@@ -34,7 +35,7 @@ struct AddShiftView: View {
                     }
                 }
                 
-                Section("Verdienst") {
+                Section("Verdienst & Status") {
                     HStack {
                         Text("Stundenlohn (€)")
                         Spacer()
@@ -49,6 +50,7 @@ struct AddShiftView: View {
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }
+                    Toggle("Aus Berechnungen ausschließen", isOn: $isArchived) // NEU
                 }
             }
             .navigationTitle("Neue Schicht")
@@ -61,7 +63,7 @@ struct AddShiftView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Speichern") {
-                        let newShift = Shift(date: date, startTime: start, endTime: end, breakMinutes: breakMin, hourlyWage: wage, tip: tip)
+                        let newShift = Shift(date: date, startTime: start, endTime: end, breakMinutes: breakMin, hourlyWage: wage, tip: tip, isArchived: isArchived)
                         modelContext.insert(newShift)
                     
                         CSVManager.exportToCSV(shifts: shifts + [newShift])
@@ -118,10 +120,11 @@ struct EditShiftView: View {
                 }
             }
             
-            Section("Zusammenfassung") {
+            Section("Zusammenfassung & Status") {
                 LabeledContent("Arbeitszeit", value: durationInTimeString(from: shift.startTime, to: shift.endTime) + " Std")
                 LabeledContent("Netto", value: (shift.totalEarnings - shift.tip).formatted(.currency(code: "EUR")))
                 LabeledContent("Gesamtverdienst", value: shift.totalEarnings.formatted(.currency(code: "EUR")))
+                Toggle("Von Berechnungen ausschließen", isOn: $shift.isArchived) // NEU
             }
         }
         .navigationTitle("Bearbeiten")
