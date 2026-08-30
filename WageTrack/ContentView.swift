@@ -1,7 +1,6 @@
 import SwiftUI
 import SwiftData
 
-
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Shift.date, order: .reverse) private var shifts: [Shift]
@@ -10,6 +9,9 @@ struct ContentView: View {
     
     @State private var showingDeleteAlert = false
     @State private var shiftToDelete: Shift?
+
+    @State private var liveManager = LiveShiftManager()
+    @State private var trackedEndTime: Date?
     
     var body: some View {
         NavigationStack {
@@ -22,6 +24,9 @@ struct ContentView: View {
                 SummaryView()
                     .padding(.bottom, 20)
                     .padding(.top, 10)
+                LiveInfoView(liveManager: $liveManager)
+                    .padding(.horizontal)
+                    .padding(.bottom, 25)
                 HStack {
                     Text("Meine Schichten")
                         .padding(.leading)
@@ -76,12 +81,40 @@ struct ContentView: View {
             .toolbar {
                 Button(action: {
                     showingAddSheet = true
+                    liveManager.reset()
+                    trackedEndTime = nil
+                    showingAddSheet = true
                 }) {
                     Label("Hinzufügen", systemImage: "plus")
                 }
+                Button(action: {
+                    if liveManager.isTracking {
+                        trackedEndTime = Date()
+                        liveManager.stopShift()
+                        showingAddSheet = true
+                    }else {
+                        liveManager.startShift()
+                    }
+                }){
+                    if liveManager.isTracking {
+                        Label("Stoppen", systemImage: "clock.badge.checkmark")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.green, Color.accentColor, .clear)
+                            .symbolEffect(.wiggle.custom(angle: 25.0).byLayer, options: .repeat(.periodic(delay: 1.0)))
+                    }else {
+                        Label("Starten", systemImage: "clock.badge")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.red, Color.accentColor, .clear)
+                    }
+                }
             }
-            .sheet(isPresented: $showingAddSheet) {
-                AddShiftView()
+            .sheet(isPresented: $showingAddSheet, onDismiss: {
+                // Wenn das Fenster geschlossen wird, Manager zurücksetzen
+                //liveManager.reset()
+                //trackedEndTime = nil
+            }) {
+                // Wir übergeben dem Sheet die getrackten Zeiten (falls vorhanden)
+                AddShiftView(initialStart: liveManager.currentStartTime, initialEnd: trackedEndTime)
             }
         }
     }

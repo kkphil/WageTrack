@@ -13,6 +13,18 @@ struct AddShiftView: View {
     @State private var wage = 14.0
     @State private var tip = 0.0
     @State private var isArchived = false
+    
+    // NEU: Eigener Initializer, um übergebene Zeiten aufzunehmen
+    init(initialStart: Date? = nil, initialEnd: Date? = nil) {
+        // Wenn Zeiten übergeben werden (aus dem Live Tracker), nutzen wir diese.
+        // Sonst nehmen wir die Standardwerte.
+        let defaultStart = initialStart ?? Date().addingTimeInterval(-21600)
+        let defaultEnd = initialEnd ?? Date()
+        
+        _date = State(initialValue: defaultStart)
+        _start = State(initialValue: defaultStart)
+        _end = State(initialValue: defaultEnd)
+    }
 
     var body: some View {
         NavigationStack {
