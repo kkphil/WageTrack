@@ -17,7 +17,7 @@ struct ListEntryView: View {
             VStack(alignment: .leading) {
                 Text(durationInTimeString(from: shift.startTime, to: shift.endTime))
                     .font(.headline)
-                Text("Lohn: \((shift.totalEarnings / durationInHours(from: shift.startTime, to: shift.endTime)), specifier: "%.2f")€/h")
+                Text("Lohn: \(effectiveHourlyWage, specifier: "%.2f")€/h")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -28,9 +28,15 @@ struct ListEntryView: View {
             }
             Spacer()
     
-            Text("\(shift.totalEarnings, specifier: "%.2f") €")
+            Text("\(shift.totalEarnings, specifier: "%.2f")€")
                 .fontWeight(.bold)
                 .foregroundStyle(shift.tip > 0 ? .blue : .green)
         }.opacity(shift.isArchived ? 0.4 : 1.0)
+    }
+
+    // Verdienst pro Stunde inkl. Trinkgeld; bei 0 Std. Dauer (Start == Ende) den Stundenlohn anzeigen
+    private var effectiveHourlyWage: Double {
+        let hours = durationInHours(from: shift.startTime, to: shift.endTime)
+        return hours > 0 ? shift.totalEarnings / hours : shift.hourlyWage
     }
 }
