@@ -3,15 +3,23 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \Shift.date, order: .reverse) private var shifts: [Shift]
-    
-    @State private var showingAddSheet = false
-    
+
+    @State private var addSheet: AddSheetContext?
+
     @State private var showingDeleteAlert = false
     @State private var shiftToDelete: Shift?
 
-    @State private var liveManager = LiveShiftManager()
-    @State private var trackedEndTime: Date?
+    let liveManager: LiveShiftManager
+    @State private var isStoppingShift = false
+
+    /// Zeiten, mit denen das Hinzufügen-Sheet vorbelegt wird (nil = Standardwerte).
+    private struct AddSheetContext: Identifiable {
+        let id = UUID()
+        var start: Date?
+        var end: Date?
+    }
     
     var body: some View {
         NavigationStack {
@@ -24,7 +32,7 @@ struct ContentView: View {
                 SummaryView()
                     .padding(.bottom, 20)
                     .padding(.top, 10)
-                LiveInfoView(liveManager: $liveManager)
+                LiveInfoView(liveManager: liveManager)
                     .padding(.horizontal)
                     .padding(.bottom, 25)
                 HStack {
@@ -80,43 +88,60 @@ struct ContentView: View {
             }
             .toolbar {
                 Button(action: {
-                    showingAddSheet = true
-                    liveManager.reset()
-                    trackedEndTime = nil
-                    showingAddSheet = true
+                    // Eine laufende Live-Schicht bleibt beim manuellen Hinzufügen unberührt
+                    addSheet = AddSheetContext()
                 }) {
                     Label("Hinzufügen", systemImage: "plus")
                 }
                 Button(action: {
                     if liveManager.isTracking {
-                        trackedEndTime = Date()
-                        liveManager.stopShift()
-                        showingAddSheet = true
-                    }else {
-                        liveManager.startShift()
+                        isStoppingShift = true
+                        Task {
+                            await liveManager.stopShift()
+                            isStoppingShift = false
+                            presentPendingShift()
+                        }
+                    } else {
+                        liveManager.startShift(hourlyWage: shifts.first?.hourlyWage ?? 14.0)
                     }
-                }){
+                }) {
                     if liveManager.isTracking {
-                        Label("Stoppen", systemImage: "clock.badge.checkmark")
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.green, Color.accentColor, .clear)
-                            .symbolEffect(.wiggle.custom(angle: 25.0).byLayer, options: .repeat(.periodic(delay: 1.0)))
-                    }else {
+                        Image(systemName: "stop.fill")
+                            .foregroundStyle(.red)
+                            .symbolEffect(.wiggle.byLayer.right, options: .repeat(.periodic(delay: 2)))
+                    } else {
                         Label("Starten", systemImage: "clock.badge")
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.red, Color.accentColor, .clear)
                     }
                 }
+                .disabled(isStoppingShift)
             }
-            .sheet(isPresented: $showingAddSheet, onDismiss: {
-                // Wenn das Fenster geschlossen wird, Manager zurücksetzen
-                //liveManager.reset()
-                //trackedEndTime = nil
-            }) {
-                // Wir übergeben dem Sheet die getrackten Zeiten (falls vorhanden)
-                AddShiftView(initialStart: liveManager.currentStartTime, initialEnd: trackedEndTime)
+            .sheet(item: $addSheet, onDismiss: {
+                // Eine gestoppte Live-Schicht ist nach dem Sheet erledigt (gespeichert oder verworfen)
+                if liveManager.hasPendingShift {
+                    Task { await liveManager.reset() }
+                }
+            }) { context in
+                AddShiftView(initialStart: context.start, initialEnd: context.end)
+            }
+            .onAppear {
+                // Wurde die App beendet, nachdem gestoppt aber bevor gespeichert wurde
+                presentPendingShift()
+            }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                switch phase {
+                case .active: liveManager.appDidBecomeActive()
+                case .background: liveManager.appDidEnterBackground()
+                default: break
+                }
             }
         }
+    }
+
+    private func presentPendingShift() {
+        guard liveManager.hasPendingShift else { return }
+        addSheet = AddSheetContext(start: liveManager.startTime, end: liveManager.endTime)
     }
     
     private var groupedShifts: [(month: String, shifts: [Shift])] {
