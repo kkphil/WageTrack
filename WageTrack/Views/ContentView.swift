@@ -53,7 +53,10 @@ struct ContentView: View {
                 
                 List {
                     ForEach(groupedShifts, id: \.month) { group in
-                        Section(header: Text(group.month)) {
+                        Section(header: Text(
+                            group.month + " - " +
+                            String(format: "%.2f€", group.shifts.reduce(0) { $0 + $1.totalEarnings })
+                        )) {
                             ForEach(group.shifts) { shift in
                                 NavigationLink(destination: EditShiftView(shift: shift)) {
                                     ListEntryView(shift: shift)
