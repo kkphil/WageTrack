@@ -62,7 +62,7 @@ struct AddShiftView: View {
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                     }
-                    Toggle("Aus Berechnungen ausschließen", isOn: $isArchived) // NEU
+                    Toggle("Aus Berechnungen ausschließen", isOn: $isArchived)
                 }
             }
             .navigationTitle("Neue Schicht")
@@ -77,8 +77,18 @@ struct AddShiftView: View {
                     Button("Speichern") {
                         let newShift = Shift(date: date, startTime: start, endTime: end, breakMinutes: breakMin, hourlyWage: wage, tip: tip, isArchived: isArchived)
                         modelContext.insert(newShift)
-                    
-                        CSVManager.exportToCSV(shifts: shifts + [newShift])
+                        
+                        // Wichtig: Erst speichern, dann exportieren
+                        do {
+                            try modelContext.save()
+                            // @Query ist hier noch nicht aktualisiert, daher frisch laden,
+                            // damit die neue Schicht im Export enthalten ist
+                            let descriptor = FetchDescriptor<Shift>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+                            let allShifts = (try? modelContext.fetch(descriptor)) ?? shifts + [newShift]
+                            CSVManager.exportToCSV(shifts: allShifts)
+                        } catch {
+                            print("Fehler beim Speichern: \(error.localizedDescription)")
+                        }
                         
                         dismiss()
                     }
