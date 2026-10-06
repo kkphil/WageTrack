@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -12,13 +13,14 @@ struct ContentView: View {
     @State private var shiftToDelete: Shift?
 
     let liveManager: LiveShiftManager
-    @State private var isStoppingShift = false
 
     /// Zeiten, mit denen das Hinzufügen-Sheet vorbelegt wird (nil = Standardwerte).
     private struct AddSheetContext: Identifiable {
         let id = UUID()
         var start: Date?
         var end: Date?
+        /// Das Sheet speichert eine gestoppte Live-Schicht
+        var isLiveShift = false
     }
     
     var body: some View {
@@ -41,6 +43,7 @@ struct ContentView: View {
                         .font(.largeTitle)
                         .bold()
                         .lineLimit(1)
+
                     Text("(\(shifts.count))")
                         .foregroundStyle(.gray)
                         .fontWeight(.semibold)
@@ -98,12 +101,8 @@ struct ContentView: View {
                 }
                 Button(action: {
                     if liveManager.isTracking {
-                        isStoppingShift = true
-                        Task {
-                            await liveManager.stopShift()
-                            isStoppingShift = false
-                            presentPendingShift()
-                        }
+                        liveManager.stopShift()
+                        presentPendingShift()
                     } else {
                         liveManager.startShift(hourlyWage: shifts.first?.hourlyWage ?? 14.0)
                     }
@@ -118,24 +117,26 @@ struct ContentView: View {
                             .foregroundStyle(.red, Color.accentColor, .clear)
                     }
                 }
-                .disabled(isStoppingShift)
             }
             .sheet(item: $addSheet, onDismiss: {
                 // Eine gestoppte Live-Schicht ist nach dem Sheet erledigt (gespeichert oder verworfen)
                 if liveManager.hasPendingShift {
-                    Task { await liveManager.reset() }
+                    liveManager.reset()
                 }
             }) { context in
-                AddShiftView(initialStart: context.start, initialEnd: context.end)
+                AddShiftView(initialStart: context.start, initialEnd: context.end, isLiveShift: context.isLiveShift)
+                    // Wegwischen würde die gestoppte Schicht kommentarlos verwerfen
+                    .interactiveDismissDisabled(context.isLiveShift)
             }
             .onAppear {
                 // Wurde die App beendet, nachdem gestoppt aber bevor gespeichert wurde
                 presentPendingShift()
             }
-            .onChange(of: scenePhase, initial: true) { _, phase in
+            .onChange(of: scenePhase, initial: true) { oldPhase, phase in
                 switch phase {
                 case .active: liveManager.appDidBecomeActive()
-                case .background: liveManager.appDidEnterBackground()
+                // Beim Start meldet SwiftUI zuerst "background", da gibt es noch nichts abzuschließen
+                case .background where oldPhase != .background: liveManager.appDidEnterBackground()
                 default: break
                 }
             }
@@ -143,10 +144,11 @@ struct ContentView: View {
     }
 
     private func presentPendingShift() {
-        guard liveManager.hasPendingShift else { return }
-        addSheet = AddSheetContext(start: liveManager.startTime, end: liveManager.endTime)
+        // Nicht erneut öffnen, wenn das Sheet für die Schicht schon angezeigt wird
+        guard liveManager.hasPendingShift, addSheet?.isLiveShift != true else { return }
+        addSheet = AddSheetContext(start: liveManager.startTime, end: liveManager.endTime, isLiveShift: true)
     }
-    
+
     private var groupedShifts: [(month: String, shifts: [Shift])] {
         // Group shifts by their year and month
         let grouped = Dictionary(grouping: shifts) { shift -> Date in
@@ -161,7 +163,7 @@ struct ContentView: View {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "de_DE")
         formatter.dateFormat = "LLLL yyyy"
-        
+
         return sortedKeys.map { key in
             // Sort the shifts within the month from newest to oldest
             let sortedShifts = grouped[key]!.sorted { $0.date > $1.date }

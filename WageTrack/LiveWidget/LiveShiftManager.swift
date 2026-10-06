@@ -5,15 +5,24 @@
 //  Created by Philip Kurth on 19.02.26.
 //
 
-import Foundation
-import SwiftUI
 import ActivityKit
 import BackgroundTasks
+import Foundation
+import os
+import UIKit
 
+/// Verwaltet die laufende Schicht und spiegelt sie in eine Live Activity.
+///
+/// Die Schicht selbst (Start, Ende, Lohn) liegt in den UserDefaults und ist die einzige Quelle
+/// der Wahrheit. Die Live Activity ist nur eine Anzeige davon: Verschwindet sie (von iOS
+/// beendet, weggewischt, App neu installiert), wird sie beim nächsten Öffnen der App neu
+/// erstellt. Die Schicht selbst geht dabei nie verloren.
 @MainActor
 @Observable
-class LiveShiftManager {
-    static let backgroundRefreshIdentifier = "phil.WageTrack.1.liveUpdate"
+final class LiveShiftManager {
+    nonisolated static let backgroundRefreshIdentifier = "phil.WageTrack.1.liveUpdate"
+    /// So oft wird der Verdienst aktualisiert, solange die App läuft.
+    private static let updateInterval: Duration = .seconds(10)
 
     /// Start der laufenden (oder gerade gestoppten) Schicht.
     private(set) var startTime: Date?
@@ -24,8 +33,13 @@ class LiveShiftManager {
     var isTracking: Bool { startTime != nil && endTime == nil }
     var hasPendingShift: Bool { startTime != nil && endTime != nil }
 
-    private var currentActivity: Activity<ShiftActivityAttributes>?
-    private var updateTask: Task<Void, Never>?
+    /// Abgleiche mit ActivityKit laufen strikt nacheinander, damit sich Starten, Stoppen und
+    /// Aktualisieren nie überholen (sonst entstehen doppelte oder verwaiste Activities).
+    @ObservationIgnored private var syncTask: Task<Void, Never>?
+    @ObservationIgnored private var updateLoop: Task<Void, Never>?
+    @ObservationIgnored private var backgroundTaskID = UIBackgroundTaskIdentifier.invalid
+
+    nonisolated private static let logger = Logger(subsystem: "phil.WageTrack.1", category: "LiveShift")
 
     // Der Zustand wird in den UserDefaults gespeichert, damit er überlebt, wenn iOS die App
     // im Hintergrund beendet (passiert bei langen Schichten praktisch immer).
@@ -39,139 +53,182 @@ class LiveShiftManager {
         restore()
     }
 
-    // MARK: - Öffentliche API
+    // MARK: - Schicht
 
     func startShift(hourlyWage: Double) {
-        let startTime = Date()
-        self.startTime = startTime
-        self.endTime = nil
+        guard !isTracking else { return }
+        startTime = .now
+        endTime = nil
         self.hourlyWage = hourlyWage
         persist()
-
-        Task {
-            // Eventuell übrig gebliebene Activities (z.B. nach einem Absturz) aufräumen
-            await endAllActivities()
-            startActivity()
-            startUpdateLoop()
-        }
-    }
-
-    func stopShift() async {
-        guard isTracking else { return }
-        endTime = Date()
-        persist()
-        stopUpdateLoop()
-        await endAllActivities()
-    }
-
-    /// Verwirft die laufende bzw. gestoppte Schicht vollständig.
-    func reset() async {
-        stopUpdateLoop()
-        await endAllActivities()
-        startTime = nil
-        endTime = nil
-        persist()
-    }
-
-    /// Muss aufgerufen werden, wenn die App in den Vordergrund kommt.
-    func appDidBecomeActive() {
-        guard isTracking else { return }
-        reattachOrRestartActivity()
+        syncActivity()
         startUpdateLoop()
     }
 
-    /// Muss aufgerufen werden, wenn die App in den Hintergrund geht.
-    func appDidEnterBackground() {
-        stopUpdateLoop()
+    /// Stoppt die Schicht sofort. Sie bleibt als offene Schicht erhalten, bis sie gespeichert
+    /// oder verworfen wurde; die Live Activity wird im Hintergrund beendet.
+    func stopShift() {
         guard isTracking else { return }
-        Task { await updateActivity() }
+        endTime = .now
+        persist()
+        stopUpdateLoop()
+        syncActivity()
+    }
+
+    /// Verwirft die laufende bzw. gestoppte Schicht vollständig.
+    func reset() {
+        startTime = nil
+        endTime = nil
+        persist()
+        stopUpdateLoop()
+        syncActivity()
+    }
+
+    // MARK: - App-Lebenszyklus
+
+    /// Muss aufgerufen werden, wenn die App in den Vordergrund kommt.
+    func appDidBecomeActive() {
+        // Stellt auch eine Activity wieder her, die iOS inzwischen beendet hat
+        syncActivity()
+        if isTracking {
+            startUpdateLoop()
+            }
+    }
+
+    /// Muss aufgerufen werden, wenn die App in den Hintergrund geht (auch beim Sperren).
+    func appDidEnterBackground() {
+        guard isTracking else {
+            stopUpdateLoop()
+            return
+        }
+        // iOS pausiert die App gleich; die Activity zeigt dann "Stand HH:MM". Vorher noch ein
+        // frisches Update, damit der Sperrbildschirm den aktuellen Betrag zeigt. Die
+        // Background-Task gibt der App die Zeit, es noch abzuschließen.
+        beginBackgroundTask()
+        let sync = syncActivity()
+        Task {
+            await sync.value
+            endBackgroundTask()
+        }
         Self.scheduleBackgroundRefresh()
     }
 
     // MARK: - Live Activity
 
-    private func startActivity() {
-        guard let startTime, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-
-        let attributes = ShiftActivityAttributes(startTime: startTime, hourlyWage: hourlyWage)
-        do {
-            currentActivity = try Activity.request(
-                attributes: attributes,
-                content: .init(state: attributes.contentState(), staleDate: nil)
-            )
-        } catch {
-            // Tracking läuft trotzdem weiter, auch wenn die Live Activity fehlschlägt
-            print("Fehler beim Starten der Live Activity: \(error.localizedDescription)")
+    /// Bringt die Live Activities in Einklang mit der Schicht. Kann beliebig oft aufgerufen
+    /// werden: Die Aufrufe werden nacheinander abgearbeitet und lesen jeweils den aktuellen Zustand.
+    @discardableResult
+    private func syncActivity() -> Task<Void, Never> {
+        let previous = syncTask
+        let task = Task {
+            await previous?.value
+            await reconcileActivities()
         }
+        syncTask = task
+        return task
     }
 
-    /// Verbindet sich nach einem App-Neustart wieder mit der laufenden Activity. Hat iOS die
-    /// Activity beendet (Limit von 8 Stunden), wird eine neue gestartet.
-    private func reattachOrRestartActivity() {
-        let running = Activity<ShiftActivityAttributes>.activities.first {
-            $0.activityState == .active || $0.activityState == .stale
-        }
-        if let running {
-            currentActivity = running
-        } else {
-            currentActivity = nil
-            startActivity()
-        }
-    }
+    private func reconcileActivities() async {
+        let shift = currentShiftAttributes()
+        let canStartNew = canStartActivity
 
-    private func updateActivity() async {
-        guard let activity = currentActivity else { return }
-        let state = activity.attributes.contentState()
-        await activity.update(ActivityContent(state: state, staleDate: nil))
-    }
-
-    private func endAllActivities() async {
+        // Genau eine laufende Activity behalten, die zur Schicht passt; alles andere beenden
+        // (z.B. Reste einer alten Schicht oder doppelte Activities).
+        var current: Activity<ShiftActivityAttributes>?
         for activity in Activity<ShiftActivityAttributes>.activities {
-            await activity.end(
-                ActivityContent(state: activity.attributes.contentState(), staleDate: nil),
-                dismissalPolicy: .immediate
-            )
+            let belongsToShift = shift.map { activity.attributes.describesSameShift(as: $0) } ?? false
+            if belongsToShift, activity.isRunning, current == nil {
+                current = activity
+                continue
+            }
+            if belongsToShift, !activity.isRunning, !canStartNew {
+                // Von iOS nach 8 Stunden beendet: Bis die App wieder offen ist und eine neue
+                // starten darf, bleibt die alte auf dem Sperrbildschirm stehen.
+                continue
+            }
+            Self.logger.info("Beende Activity \(activity.id, privacy: .public) (\(String(describing: activity.activityState), privacy: .public))")
+            await activity.end(nil, dismissalPolicy: .immediate)
         }
-        currentActivity = nil
+
+        guard let shift else { return }
+        if let current {
+            await current.update(shift.content())
+        } else if canStartNew {
+            requestActivity(for: shift)
+        }
+    }
+
+    private func currentShiftAttributes() -> ShiftActivityAttributes? {
+        guard isTracking, let startTime else { return nil }
+        return ShiftActivityAttributes(startTime: startTime, hourlyWage: hourlyWage)
+    }
+
+    /// Neue Activities erlaubt iOS nur, solange die App im Vordergrund ist.
+    private var canStartActivity: Bool {
+        ActivityAuthorizationInfo().areActivitiesEnabled && UIApplication.shared.applicationState != .background
+    }
+
+    private func requestActivity(for attributes: ShiftActivityAttributes) {
+        do {
+            let activity = try Activity.request(attributes: attributes, content: attributes.content())
+            Self.logger.info("Activity gestartet: \(activity.id, privacy: .public)")
+        } catch {
+            // Das Tracking läuft trotzdem weiter, auch wenn die Live Activity fehlschlägt
+            Self.logger.error("Live Activity konnte nicht gestartet werden: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     // MARK: - Periodische Aktualisierung
 
-    /// Solange die App läuft, wird der Verdienst in der Live Activity alle 30 Sekunden aktualisiert.
     private func startUpdateLoop() {
-        updateTask?.cancel()
-        updateTask = Task { [weak self] in
+        guard updateLoop == nil else { return }
+        updateLoop = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.updateActivity()
-                try? await Task.sleep(for: .seconds(30))
+                try? await Task.sleep(for: Self.updateInterval)
+                guard !Task.isCancelled, let self else { return }
+                await self.syncActivity().value
             }
         }
     }
 
     private func stopUpdateLoop() {
-        updateTask?.cancel()
-        updateTask = nil
+        updateLoop?.cancel()
+        updateLoop = nil
     }
 
     // MARK: - Hintergrund
 
+    private func beginBackgroundTask() {
+        guard backgroundTaskID == .invalid else { return }
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "LiveActivityUpdate") { [weak self] in
+            // Läuft die Zeit ab, muss die Task beendet werden, sonst beendet iOS die App
+            self?.endBackgroundTask()
+        }
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        backgroundTaskID = .invalid
+    }
+
     /// Bittet iOS, die App im Hintergrund kurz zu wecken, um den Verdienst zu aktualisieren.
-    /// iOS entscheidet selbst, wann (und ob) das passiert – typischerweise alle 15+ Minuten.
+    /// iOS entscheidet selbst, wann (und ob) das passiert – frühestens nach 15 Minuten.
     nonisolated static func scheduleBackgroundRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: backgroundRefreshIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
-            print("Hintergrund-Aktualisierung konnte nicht geplant werden: \(error.localizedDescription)")
+            logger.error("Hintergrund-Aktualisierung konnte nicht geplant werden: \(error.localizedDescription, privacy: .public)")
         }
     }
 
     nonisolated static func refreshActivitiesInBackground() async {
-        let activities = Activity<ShiftActivityAttributes>.activities.filter { $0.activityState == .active }
+        let activities = Activity<ShiftActivityAttributes>.activities.filter(\.isRunning)
         guard !activities.isEmpty else { return }
         for activity in activities {
-            await activity.update(ActivityContent(state: activity.attributes.contentState(), staleDate: nil))
+            await activity.update(activity.attributes.content())
         }
         scheduleBackgroundRefresh()
     }
@@ -194,10 +251,19 @@ class LiveShiftManager {
         }
 
         // Fallback: Es läuft noch eine Activity, aber der gespeicherte Zustand fehlt
-        if startTime == nil, let activity = Activity<ShiftActivityAttributes>.activities.first {
+        if startTime == nil,
+           let activity = Activity<ShiftActivityAttributes>.activities.first(where: \.isRunning),
+           activity.attributes.hourlyWage > 0 {
             startTime = activity.attributes.startTime
             hourlyWage = activity.attributes.hourlyWage
             persist()
         }
+    }
+}
+
+private extension Activity {
+    /// Wird die Activity noch angezeigt und kann aktualisiert werden?
+    nonisolated var isRunning: Bool {
+        activityState == .active || activityState == .stale
     }
 }

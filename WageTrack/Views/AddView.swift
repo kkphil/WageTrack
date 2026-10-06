@@ -13,9 +13,14 @@ struct AddShiftView: View {
     @State private var wage = 14.0
     @State private var tip = 0.0
     @State private var isArchived = false
+    @State private var showingDiscardConfirmation = false
+
+    /// Speichert eine gestoppte Live-Schicht: Abbrechen verwirft sie, daher wird nachgefragt.
+    private let isLiveShift: Bool
     
     // NEU: Eigener Initializer, um übergebene Zeiten aufzunehmen
-    init(initialStart: Date? = nil, initialEnd: Date? = nil) {
+    init(initialStart: Date? = nil, initialEnd: Date? = nil, isLiveShift: Bool = false) {
+        self.isLiveShift = isLiveShift
         // Wenn Zeiten übergeben werden (aus dem Live Tracker), nutzen wir diese.
         // Sonst nehmen wir die Standardwerte.
         let defaultStart = initialStart ?? Date().addingTimeInterval(-21600)
@@ -94,7 +99,19 @@ struct AddShiftView: View {
                     }
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Abbrechen") { dismiss() }
+                    Button("Abbrechen") {
+                        if isLiveShift {
+                            showingDiscardConfirmation = true
+                        } else {
+                            dismiss()
+                        }
+                    }
+                    .confirmationDialog("Live-Schicht verwerfen?", isPresented: $showingDiscardConfirmation, titleVisibility: .visible) {
+                        Button("Verwerfen", role: .destructive) { dismiss() }
+                        Button("Zurück", role: .cancel) {}
+                    } message: {
+                        Text("Die aufgezeichnete Schicht wird nicht gespeichert.")
+                    }
                 }
             }
         }

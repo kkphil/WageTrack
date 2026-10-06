@@ -48,10 +48,13 @@ struct WageTrackLiveActivity: Widget {
                         earningsText(for: context.state)
                             .font(.body)
                             .fontWeight(.bold)
-                            .foregroundColor(.green)
-                        Text("Stand \(context.state.updatedAt, style: .time)")
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(context.isStale ? .secondary : .green)
+                        // Nur wenn die App den Betrag länger nicht aktualisieren konnte
+                        if context.isStale {
+                            Text("Stand \(context.state.updatedAt, style: .time)")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
                     }
 
                     Spacer()
@@ -60,7 +63,7 @@ struct WageTrackLiveActivity: Widget {
                         Text("Stundenlohn")
                             .font(.caption2)
                             .foregroundColor(.secondary)
-                        Text(String(format: "%.2f €/h", context.attributes.hourlyWage))
+                        Text("\(context.attributes.hourlyWage, specifier: "%.2f") €/h")
                             .font(.caption)
                             .fontWeight(.semibold)
                     }
@@ -112,7 +115,7 @@ struct WageTrackLiveActivity: Widget {
                         earningsText(for: context.state)
                             .font(.caption)
                             .fontWeight(.semibold)
-                            .foregroundColor(.green)
+                            .foregroundColor(context.isStale ? .secondary : .green)
                     }
                     .multilineTextAlignment(.trailing)
                     .padding(.trailing, 8)
@@ -123,9 +126,15 @@ struct WageTrackLiveActivity: Widget {
                         Image(systemName: "info.circle.fill")
                             .font(.caption2)
                             .foregroundColor(.blue)
-                        Text("Öffne die App zum Beenden")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                        if context.isStale {
+                            Text("Verdienst Stand \(context.state.updatedAt, style: .time)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Öffne die App zum Beenden")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     .padding(.top, 12)
                     .padding(.horizontal, 8)
@@ -141,9 +150,12 @@ struct WageTrackLiveActivity: Widget {
                     countingUpIn: elapsedRange(for: context.attributes),
                     maxFieldCount: 2
                 ))
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                // Timer-Texte reservieren sonst Platz für den längsten möglichen Wert und machen
+                // die Dynamic Island unnötig breit. "45:30" bzw. "7:45" passen in 42 pt.
+                .font(.system(size: 14, weight: .semibold).monospacedDigit())
                 .foregroundColor(.blue)
-                .frame(maxWidth: 55)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 42, alignment: .trailing)
             } minimal: {
                 // Minimale Ansicht (nur Icon wenn mehrere Activities aktiv sind)
                 Image(systemName: "briefcase.fill")
@@ -163,8 +175,10 @@ struct WageTrackLiveActivity: Widget {
         Text(.currentDate, format: .timer(countingUpIn: elapsedRange(for: attributes)))
     }
 
-    // Verdienst kommt aus dem ContentState, da Live Activities eigene Berechnungen nicht live neu rendern
-    private func earningsText(for state: ShiftActivityAttributes.ContentState) -> Text {
-        Text(String(format: "%.2f €", state.earnings))
+    // Verdienst kommt aus dem ContentState: Eigene Berechnungen (auch eigene FormatStyles)
+    // kann das System beim Rendern der Live Activity nicht ausführen, nur seine Timer-Formate.
+    private func earningsText(for state: ShiftActivityAttributes.ContentState) -> some View {
+        Text("\(state.earnings, specifier: "%.2f") €")
+            .contentTransition(.numericText(value: state.earnings))
     }
 }
