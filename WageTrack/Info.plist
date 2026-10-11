@@ -6,9 +6,12 @@
 	<array>
 		<string>phil.WageTrack.1.liveUpdate</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Damit der Verdienst in der Live-Aktivität auch bei gesperrtem iPhone weiterzählt, bleibt WageTrack während einer laufenden Schicht über deinen ungefähren Standort aktiv. Der Standort wird nicht gespeichert oder verwendet.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
+		<string>location</string>
 	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>

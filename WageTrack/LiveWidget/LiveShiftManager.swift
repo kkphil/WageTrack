@@ -21,7 +21,7 @@ import UIKit
 @Observable
 final class LiveShiftManager {
     nonisolated static let backgroundRefreshIdentifier = "phil.WageTrack.1.liveUpdate"
-    /// So oft wird der Verdienst aktualisiert, solange die App läuft.
+    /// So oft wird der Verdienst aktualisiert, solange die App läuft (auch im Hintergrund).
     private static let updateInterval: Duration = .seconds(10)
 
     /// Start der laufenden (oder gerade gestoppten) Schicht.
@@ -38,6 +38,7 @@ final class LiveShiftManager {
     @ObservationIgnored private var syncTask: Task<Void, Never>?
     @ObservationIgnored private var updateLoop: Task<Void, Never>?
     @ObservationIgnored private var backgroundTaskID = UIBackgroundTaskIdentifier.invalid
+    @ObservationIgnored private let keepAlive = BackgroundKeepAlive()
 
     nonisolated private static let logger = Logger(subsystem: "phil.WageTrack.1", category: "LiveShift")
 
@@ -63,6 +64,7 @@ final class LiveShiftManager {
         persist()
         syncActivity()
         startUpdateLoop()
+        keepAlive.start()
     }
 
     /// Stoppt die Schicht sofort. Sie bleibt als offene Schicht erhalten, bis sie gespeichert
@@ -72,6 +74,7 @@ final class LiveShiftManager {
         endTime = .now
         persist()
         stopUpdateLoop()
+        keepAlive.stop()
         syncActivity()
     }
 
@@ -81,6 +84,7 @@ final class LiveShiftManager {
         endTime = nil
         persist()
         stopUpdateLoop()
+        keepAlive.stop()
         syncActivity()
     }
 
@@ -92,7 +96,8 @@ final class LiveShiftManager {
         syncActivity()
         if isTracking {
             startUpdateLoop()
-            }
+            keepAlive.start()
+        }
     }
 
     /// Muss aufgerufen werden, wenn die App in den Hintergrund geht (auch beim Sperren).
@@ -101,9 +106,10 @@ final class LiveShiftManager {
             stopUpdateLoop()
             return
         }
-        // iOS pausiert die App gleich; die Activity zeigt dann "Stand HH:MM". Vorher noch ein
-        // frisches Update, damit der Sperrbildschirm den aktuellen Betrag zeigt. Die
-        // Background-Task gibt der App die Zeit, es noch abzuschließen.
+        // Die periodische Aktualisierung läuft weiter, solange `keepAlive` die App aktiv hält.
+        // Ohne Standort-Erlaubnis pausiert iOS die App; die Activity zeigt dann "Stand HH:MM".
+        // Zusätzlich sofort ein frisches Update, damit der Sperrbildschirm den aktuellen Betrag
+        // zeigt. Die Background-Task gibt der App die Zeit, es noch abzuschließen.
         beginBackgroundTask()
         let sync = syncActivity()
         Task {
