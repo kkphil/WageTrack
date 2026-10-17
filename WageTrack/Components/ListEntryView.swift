@@ -36,7 +36,7 @@ struct ListEntryView: View {
 
     // Verdienst pro Stunde inkl. Trinkgeld; bei 0 Std. Dauer (Start == Ende) den Stundenlohn anzeigen
     private var effectiveHourlyWage: Double {
-        let hours = durationInHours(from: shift.startTime, to: shift.endTime)
+        let hours = durationInHours(from: shift.startTime, to: shift.endTime) - Double((shift.breakMinutes))/60.0
         return hours > 0 ? shift.totalEarnings / hours : shift.hourlyWage
     }
 }

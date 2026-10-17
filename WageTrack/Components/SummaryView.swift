@@ -16,21 +16,13 @@ struct SummaryView: View {
         shifts.filter { !$0.isArchived }
     }
 
-    private var totalHours: Double {
-        activeShifts.reduce(0) { $0 + durationInHours(from: $1.startTime, to: $1.endTime) }
+    public var totalHours: Double {
+        activeShifts.reduce(0) { $0 + durationInHours(from: $1.startTime, to: $1.endTime) - (Double($1.breakMinutes) / 60.0)}
     }
     
-    // NEU: Wandelt die Dezimalstunden (z.B. 25.5) in einen String (25:30h) um
-    private var totalHoursFormatted: String {
-        let hours = Int(totalHours)
-        let minutes = Int(round((totalHours - Double(hours)) * 60))
-        
-        // Verhindert Anzeige von "25:60h" durch Rundung, macht stattdessen "26:00h" daraus
-        if minutes == 60 {
-            return String(format: "%d:00h", hours + 1)
-        } else {
-            return String(format: "%d:%02dh", hours, minutes)
-        }
+    
+    private var avgErningsPerHour: String {
+        return String(format: "%.2f€", (totalEarnings / totalHours))
     }
     
     private var totalShifts: Int { activeShifts.count }
@@ -90,11 +82,10 @@ struct SummaryView: View {
     var body: some View {
         VStack {
             HStack {
-                // Hier rufen wir jetzt die neue formatierte Eigenschaft auf
-                BoxView(title: "Arbeitszeit", value: totalHoursFormatted)
+                BoxView(title: "Gesamt", value: String(format: "%.2f€", totalEarnings))
                 BoxView(title: "Netto", value: String(format: "%.2f€", totalEarningsWithoutTips))
                 BoxView(title: "Tipps", value: String(format: "%.2f€", totalTips))
-                BoxView(title: "Gesamt", value: String(format: "%.2f€", totalEarnings))
+                BoxView(title: "Ø €/h", value: avgErningsPerHour)
             }
             HStack {
                 BoxView(title: "Monat (Net)", value: String(format: "%.2f€", earningsThisMonthWithoutTips))

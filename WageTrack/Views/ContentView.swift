@@ -37,17 +37,18 @@ struct ContentView: View {
                 LiveInfoView(liveManager: liveManager)
                     .padding(.horizontal)
                     .padding(.bottom, 25)
-                HStack {
+                VStack(alignment: .leading) {
                     Text("Meine Schichten")
                         .padding(.leading)
                         .font(.largeTitle)
                         .bold()
                         .lineLimit(1)
-
-                    Text("(\(shifts.count))")
+                    
+                    Text("(\(shifts.count)) • \(totalHoursFormatted)")
+                        .padding(.leading)
                         .foregroundStyle(.gray)
-                        .fontWeight(.semibold)
-                        .font(.largeTitle)
+                        .fontWeight(.medium)
+                        .font(.default)
                         .bold()
                         .lineLimit(1)
                 }
@@ -56,10 +57,8 @@ struct ContentView: View {
                 
                 List {
                     ForEach(groupedShifts, id: \.month) { group in
-                        Section(header: Text(
-                            group.month + " - " +
-                            String(format: "%.2f€", group.shifts.reduce(0) { $0 + $1.totalEarnings })
-                        )) {
+                        Section(header: Text(headerText(for: group))
+                        ) {
                             ForEach(group.shifts) { shift in
                                 NavigationLink(destination: EditShiftView(shift: shift)) {
                                     ListEntryView(shift: shift)
@@ -168,6 +167,30 @@ struct ContentView: View {
             // Sort the shifts within the month from newest to oldest
             let sortedShifts = grouped[key]!.sorted { $0.date > $1.date }
             return (formatter.string(from: key), sortedShifts)
+        }
+    }
+    
+    private func headerText(for group: (month: String, shifts: [Shift])) -> String {
+        let tot = group.shifts.reduce(0) { $0 + $1.totalEarnings }
+        let tip = group.shifts.reduce(0) { $0 + $1.tip }
+        let f = { (v: Double) in String(format: "%.2f€", v) }
+        return "\(group.month) - \(f(tot))\n\(f(tot - tip)) • \(f(tip))"
+    }
+    
+    private var totalHours: Double {
+        shifts.filter { !$0.isArchived }
+            .reduce(0) { $0 + durationInHours(from: $1.startTime, to: $1.endTime) }
+    }
+
+    private var totalHoursFormatted: String {
+        let hours = Int(totalHours)
+        let minutes = Int(round((totalHours - Double(hours)) * 60))
+        
+        // Verhindert Anzeige von "25:60h" durch Rundung, macht stattdessen "26:00h" daraus
+        if minutes == 60 {
+            return String(format: "%d:00h", hours + 1)
+        } else {
+            return String(format: "%d:%02dh", hours, minutes)
         }
     }
 
