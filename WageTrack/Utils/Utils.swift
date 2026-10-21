@@ -7,33 +7,40 @@
 
 import Foundation
 
-public func durationInTimeString(from start: Date, to end: Date = Date()) -> String {
-    var difference = end.timeIntervalSince(start)
-    
-    // Wenn die Differenz negativ ist, bedeutet das, dass end vor start liegt
-    // Das kann passieren, wenn eine Schicht über Mitternacht geht
+/// Dauer einer Schicht in Sekunden, abzüglich der Pause.
+///
+/// Start und Ende werden als Uhrzeiten verstanden: Liegt das Ende vor dem Start, geht die
+/// Schicht über Mitternacht. Das Ergebnis liegt daher immer zwischen 0 und 24 Stunden,
+/// auch wenn die Datumsanteile der beiden Zeitpunkte nicht zusammenpassen.
+public func shiftDuration(from start: Date, to end: Date, breakMinutes: Int = 0) -> TimeInterval {
+    let day: TimeInterval = 86_400
+    var difference = end.timeIntervalSince(start).truncatingRemainder(dividingBy: day)
     if difference < 0 {
-        difference += 86_400 // Füge 24 Stunden hinzu
+        difference += day
     }
-    
-    let minutes = Int((difference.truncatingRemainder(dividingBy: 3_600)) / 60)
-    let hours = Int((difference.truncatingRemainder(dividingBy: 86_400)) / 3_600)
-    
-    return String(format: "%02d:%02d", hours, minutes)
+    return max(0, difference - Double(max(0, breakMinutes)) * 60)
+}
+
+/// Dauer als "HH:mm".
+public func durationInTimeString(from start: Date, to end: Date = Date(), breakMinutes: Int = 0) -> String {
+    timeString(seconds: shiftDuration(from: start, to: end, breakMinutes: breakMinutes))
 }
 
 public func durationInHours(from start: Date, to end: Date = Date(), breakMinutes: Int = 0) -> Double {
-    var difference = end.timeIntervalSince(start)
-    
-    // Wenn die Differenz negativ ist, bedeutet das, dass end vor start liegt
-    // Das kann passieren, wenn eine Schicht über Mitternacht geht
-    if difference < 0 {
-        difference += 86_400 // Füge 24 Stunden hinzu
-    }
-    
-    // Subtrahiere die Pausenzeit (in Sekunden)
-    difference = max(0, difference - Double(breakMinutes) * 60)
-    
-    // Berechne die Stunden
-    return (difference.truncatingRemainder(dividingBy: 86_400)) / 3_600
+    shiftDuration(from: start, to: end, breakMinutes: breakMinutes) / 3_600
+}
+
+/// Tatsächlich vergangene Zeit als "HH:mm" – ohne Umbruch nach 24 Stunden.
+public func elapsedTimeString(from start: Date, to end: Date = Date()) -> String {
+    timeString(seconds: max(0, end.timeIntervalSince(start)))
+}
+
+private func timeString(seconds: TimeInterval) -> String {
+    let totalMinutes = Int(seconds / 60)
+    return String(format: "%02d:%02d", totalMinutes / 60, totalMinutes % 60)
+}
+
+/// Rundet einen Betrag auf volle Cent.
+public func roundedToCents(_ amount: Double) -> Double {
+    (amount * 100).rounded() / 100
 }

@@ -10,8 +10,8 @@ final class Shift {
     var hourlyWage: Double
     var tip: Double
     var isArchived: Bool = false
-    
-    init(date: Date = .now, startTime: Date = .now, endTime: Date = .now.addingTimeInterval(28800), breakMinutes: Int = 30, hourlyWage: Double = 14.00, tip: Double = 0, isArchived: Bool = false) {
+
+    init(date: Date, startTime: Date, endTime: Date, breakMinutes: Int, hourlyWage: Double, tip: Double = 0, isArchived: Bool = false) {
         self.date = date
         self.startTime = startTime
         self.endTime = endTime
@@ -20,12 +20,19 @@ final class Shift {
         self.tip = tip
         self.isArchived = isArchived
     }
-    
-    
-    // Berechnet den Gesamtverdienst und rundet auf 2 Nachkommastellen (Cents)
+
+    /// Bezahlte Arbeitszeit in Stunden (ohne Pause).
+    var workedHours: Double {
+        durationInHours(from: startTime, to: endTime, breakMinutes: breakMinutes)
+    }
+
+    /// Verdienst aus dem Stundenlohn, ohne Trinkgeld.
+    var wageEarnings: Double {
+        roundedToCents(workedHours * hourlyWage)
+    }
+
+    /// Gesamtverdienst inkl. Trinkgeld, auf Cent gerundet.
     var totalEarnings: Double {
-        let duration = durationInHours(from: startTime, to: endTime, breakMinutes: breakMinutes)
-        let earnings = (duration * hourlyWage) + tip
-        return (earnings * 100).rounded() / 100
+        roundedToCents(wageEarnings + tip)
     }
 }

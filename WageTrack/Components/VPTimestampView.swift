@@ -9,14 +9,10 @@ import Foundation
 import SwiftUI
 
 struct VPTimestampView: View {
-    @State private var date: Date = Date()
-    @State private var color: Color = .accentColor
-    
-    init(date: Date, color: Color? = nil) {
-        _date = State(initialValue: date)
-        _color = State(initialValue: color ?? .accentColor)
-    }
-    
+    // Bewusst kein @State: Sonst bliebe das Datum stehen, wenn die Schicht bearbeitet wird
+    let date: Date
+    var color: Color = .accentColor
+
     var body: some View {
         VStack {
             Text(date.format("dd"))
