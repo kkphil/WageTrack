@@ -38,18 +38,7 @@ struct AddShiftView: View {
                     DatePicker("Datum", selection: $date, displayedComponents: .date)
                     DatePicker("Start", selection: $start, displayedComponents: .hourAndMinute)
                     DatePicker("Ende", selection: $end, displayedComponents: .hourAndMinute)
-                    HStack {
-                        Text("Pause")
-                        Spacer()
-                        Picker("(min)", selection: $breakMin){
-                            ForEach(Array(stride(from: 0, through: 180, by: 5)).map { Int($0) }, id: \.self) { minute in
-                                let hours = minute / 60
-                                let minutes = minute % 60
-                                Text(String(format: "%02d:%02d (Std.)", hours, minutes))
-                                    .tag(minute)
-                            }
-                        }.pickerStyle(.menu)
-                    }
+                    BreakPicker(minutes: $breakMin)
                 }
                 
                 Section("Verdienst & Status") {

@@ -19,18 +19,7 @@ struct EditShiftView: View {
                 DatePicker("Datum", selection: $shift.date, displayedComponents: .date)
                 DatePicker("Start", selection: $shift.startTime, displayedComponents: .hourAndMinute)
                 DatePicker("Ende", selection: $shift.endTime, displayedComponents: .hourAndMinute)
-                HStack {
-                    Picker("Pause (Min)", selection: $shift.breakMinutes){
-                        ForEach(Array(stride(from: 0, through: 180, by: 5)).map { Int($0) }, id: \.self) { minute in
-                            let hours = minute / 60
-                            let minutes = minute % 60
-                            Text(String(format: "%02d:%02d (Std.)", hours, minutes))
-                                .tag(minute)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .foregroundStyle(.primary)
-                }
+                BreakPicker(minutes: $shift.breakMinutes)
             }
             
             Section("Verdienst") {
