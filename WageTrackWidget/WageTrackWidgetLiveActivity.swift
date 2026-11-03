@@ -45,7 +45,7 @@ struct WageTrackLiveActivity: Widget {
                         Text("Verdienst")
                             .font(.caption2)
                             .foregroundColor(.secondary)
-                        earningsText(for: context.state)
+                        earningsText(for: context)
                             .font(.body)
                             .fontWeight(.bold)
                             .foregroundColor(context.isStale ? .secondary : .green)
@@ -63,7 +63,7 @@ struct WageTrackLiveActivity: Widget {
                         Text("Stundenlohn")
                             .font(.caption2)
                             .foregroundColor(.secondary)
-                        Text("\(context.attributes.hourlyWage, specifier: "%.2f") €/h")
+                        Text("\(context.attributes.hourlyWage.formatted(.currency(code: context.attributes.currencyCode)))/h")
                             .font(.caption)
                             .fontWeight(.semibold)
                     }
@@ -112,7 +112,7 @@ struct WageTrackLiveActivity: Widget {
                             .fontWeight(.bold)
                             .foregroundColor(.blue)
 
-                        earningsText(for: context.state)
+                        earningsText(for: context)
                             .font(.caption)
                             .fontWeight(.semibold)
                             .foregroundColor(context.isStale ? .secondary : .green)
@@ -177,8 +177,9 @@ struct WageTrackLiveActivity: Widget {
 
     // Verdienst kommt aus dem ContentState: Eigene Berechnungen (auch eigene FormatStyles)
     // kann das System beim Rendern der Live Activity nicht ausführen, nur seine Timer-Formate.
-    private func earningsText(for state: ShiftActivityAttributes.ContentState) -> some View {
-        Text("\(state.earnings, specifier: "%.2f") €")
-            .contentTransition(.numericText(value: state.earnings))
+    // Die Währung steht in den Attributen, da die Extension die Einstellungen der App nicht kennt.
+    private func earningsText(for context: ActivityViewContext<ShiftActivityAttributes>) -> some View {
+        Text(context.state.earnings, format: .currency(code: context.attributes.currencyCode))
+            .contentTransition(.numericText(value: context.state.earnings))
     }
 }

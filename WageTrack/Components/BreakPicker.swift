@@ -18,13 +18,10 @@ struct BreakPicker: View {
         _minutes = minutes
     }
 
-    /// Längste auswählbare Pause in Minuten.
-    private static let maxMinutes = 120
-
     /// Ältere Schichten können längere Pausen haben; sie bleiben auswählbar, statt beim
     /// Öffnen des Rads stillschweigend gekürzt zu werden.
     private var selectableMinutes: ClosedRange<Int> {
-        0...max(Self.maxMinutes, minutes)
+        0...max(AppSettings.maxBreakMinutes, minutes)
     }
 
     var body: some View {

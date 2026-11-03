@@ -28,7 +28,8 @@ final class LiveShiftManager {
     private(set) var startTime: Date?
     /// Wird beim Stoppen gesetzt und bleibt erhalten, bis die Schicht gespeichert oder verworfen wurde.
     private(set) var endTime: Date?
-    private(set) var hourlyWage: Double = 14.0
+    /// Stundenlohn, mit dem die Schicht aufgezeichnet wird.
+    private(set) var hourlyWage: Double = 0
 
     var isTracking: Bool { startTime != nil && endTime == nil }
     var hasPendingShift: Bool { startTime != nil && endTime != nil }
@@ -64,7 +65,7 @@ final class LiveShiftManager {
         persist()
         syncActivity()
         startUpdateLoop()
-        keepAlive.start()
+        updateKeepAlive()
     }
 
     /// Stoppt die Schicht sofort. Sie bleibt als offene Schicht erhalten, bis sie gespeichert
@@ -96,8 +97,14 @@ final class LiveShiftManager {
         syncActivity()
         if isTracking {
             startUpdateLoop()
-            keepAlive.start()
         }
+        updateKeepAlive()
+    }
+
+    /// Muss aufgerufen werden, nachdem Einstellungen geändert wurden (Währung, Hintergrund-Aktualisierung).
+    func settingsDidChange() {
+        syncActivity()
+        updateKeepAlive()
     }
 
     /// Muss aufgerufen werden, wenn die App in den Hintergrund geht (auch beim Sperren).
@@ -166,7 +173,16 @@ final class LiveShiftManager {
 
     private func currentShiftAttributes() -> ShiftActivityAttributes? {
         guard isTracking, let startTime else { return nil }
-        return ShiftActivityAttributes(startTime: startTime, hourlyWage: hourlyWage)
+        return ShiftActivityAttributes(startTime: startTime, hourlyWage: hourlyWage, currencyCode: AppSettings.currencyCode)
+    }
+
+    /// Hält die App nur während einer laufenden Schicht aktiv – und nur, wenn es erwünscht ist.
+    private func updateKeepAlive() {
+        if isTracking, AppSettings.backgroundUpdatesEnabled {
+            keepAlive.start()
+        } else {
+            keepAlive.stop()
+        }
     }
 
     /// Neue Activities erlaubt iOS nur, solange die App im Vordergrund ist.

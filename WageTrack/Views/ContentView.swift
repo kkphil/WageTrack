@@ -7,7 +7,11 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \Shift.date, order: .reverse) private var shifts: [Shift]
 
+    @AppStorage(AppSettings.Keys.currencyCode) private var currencyCode = AppSettings.systemCurrencyCode
+
     @State private var addSheet: AddSheetContext?
+    @State private var showingSettings = false
+    @State private var showingMissingWageAlert = false
 
     @State private var showingDeleteAlert = false
     @State private var shiftToDelete: Shift?
@@ -19,6 +23,7 @@ struct ContentView: View {
         let id = UUID()
         var start: Date?
         var end: Date?
+        var hourlyWage: Double?
         /// Das Sheet speichert eine gestoppte Live-Schicht
         var isLiveShift = false
     }
@@ -83,7 +88,9 @@ struct ContentView: View {
                     Button("Löschen", role: .destructive) {
                         // Wenn der User bestätigt, löschen wir den gemerkten Eintrag
                         if let shift = shiftToDelete {
-                                modelContext.delete(shift)
+                            modelContext.delete(shift)
+                            try? modelContext.save()
+                            CSVManager.export(from: modelContext)
                         }
                         shiftToDelete = nil
                     }
@@ -92,40 +99,65 @@ struct ContentView: View {
                 }
             }
             .toolbar {
-                Button(action: {
-                    // Eine laufende Live-Schicht bleibt beim manuellen Hinzufügen unberührt
-                    addSheet = AddSheetContext()
-                }) {
-                    Label("Hinzufügen", systemImage: "plus")
-                }
-                Button(action: {
-                    if liveManager.isTracking {
-                        liveManager.stopShift()
-                        presentPendingShift()
-                    } else {
-                        liveManager.startShift(hourlyWage: shifts.first?.hourlyWage ?? 14.0)
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Label("Einstellungen", systemImage: "gearshape")
                     }
-                }) {
-                    if liveManager.isTracking {
-                        Image(systemName: "stop.fill")
-                            .foregroundStyle(.red)
-                            .symbolEffect(.wiggle.byLayer.right, options: .repeat(.periodic(delay: 2)))
-                    } else {
-                        Label("Starten", systemImage: "clock.badge")
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.red, Color.accentColor, .clear)
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button(action: {
+                        // Eine laufende Live-Schicht bleibt beim manuellen Hinzufügen unberührt
+                        addSheet = AddSheetContext()
+                    }) {
+                        Label("Hinzufügen", systemImage: "plus")
+                    }
+                    Button(action: toggleLiveShift) {
+                        if liveManager.isTracking {
+                            Image(systemName: "stop.fill")
+                                .foregroundStyle(.red)
+                                .accessibilityLabel("Stoppen")
+                                .symbolEffect(.wiggle.byLayer.right, options: .repeat(.periodic(delay: 2)))
+                        } else {
+                            Label("Starten", systemImage: "clock.badge")
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.red, Color.accentColor, .clear)
+                        }
                     }
                 }
             }
             .sheet(item: $addSheet, onDismiss: {
-                // Eine gestoppte Live-Schicht ist nach dem Sheet erledigt (gespeichert oder verworfen)
-                if liveManager.hasPendingShift {
-                    liveManager.reset()
-                }
+                // Sicherheitsnetz: Wurde das Sheet geschlossen, ohne dass die gestoppte Schicht
+                // gespeichert oder verworfen wurde, wird sie erneut angeboten statt gelöscht
+                presentPendingShift()
             }) { context in
-                AddShiftView(initialStart: context.start, initialEnd: context.end, isLiveShift: context.isLiveShift)
-                    // Wegwischen würde die gestoppte Schicht kommentarlos verwerfen
-                    .interactiveDismissDisabled(context.isLiveShift)
+                AddShiftView(
+                    initialStart: context.start,
+                    initialEnd: context.end,
+                    initialWage: context.hourlyWage,
+                    isLiveShift: context.isLiveShift,
+                    onFinish: {
+                        // Die gestoppte Live-Schicht ist erst jetzt erledigt (gespeichert oder verworfen)
+                        if context.isLiveShift {
+                            liveManager.reset()
+                        }
+                    }
+                )
+                // Wegwischen würde die gestoppte Schicht kommentarlos verwerfen
+                .interactiveDismissDisabled(context.isLiveShift)
+            }
+            .sheet(isPresented: $showingSettings, onDismiss: {
+                // Währung oder Hintergrund-Aktualisierung können sich geändert haben
+                liveManager.settingsDidChange()
+            }) {
+                SettingsView()
+            }
+            .alert("Stundenlohn fehlt", isPresented: $showingMissingWageAlert) {
+                Button("Einstellungen") { showingSettings = true }
+                Button("Abbrechen", role: .cancel) {}
+            } message: {
+                Text("Lege in den Einstellungen deinen Stundenlohn fest, um eine Schicht live aufzuzeichnen.")
             }
             .onAppear {
                 // Wurde die App beendet, nachdem gestoppt aber bevor gespeichert wurde
@@ -142,12 +174,35 @@ struct ContentView: View {
         }
     }
 
+    private func toggleLiveShift() {
+        if liveManager.isTracking {
+            liveManager.stopShift()
+            presentPendingShift()
+            return
+        }
+        // Eine gestoppte Schicht muss erst gespeichert oder verworfen werden
+        guard !liveManager.hasPendingShift else {
+            presentPendingShift()
+            return
+        }
+        guard let wage = AppSettings.newShiftDefaults(lastShift: shifts.first).hourlyWage else {
+            showingMissingWageAlert = true
+            return
+        }
+        liveManager.startShift(hourlyWage: wage)
+    }
+
     private func presentPendingShift() {
         // Nicht erneut öffnen, wenn das Sheet für die Schicht schon angezeigt wird
         guard liveManager.hasPendingShift, addSheet?.isLiveShift != true else { return }
-        addSheet = AddSheetContext(start: liveManager.startTime, end: liveManager.endTime, isLiveShift: true)
+        addSheet = AddSheetContext(
+            start: liveManager.startTime,
+            end: liveManager.endTime,
+            hourlyWage: liveManager.hourlyWage,
+            isLiveShift: true
+        )
     }
-
+    
     private var groupedShifts: [(month: String, shifts: [Shift])] {
         // Group shifts by their year and month
         let grouped = Dictionary(grouping: shifts) { shift -> Date in
@@ -158,28 +213,24 @@ struct ContentView: View {
         // Sort the group keys (months) from newest to oldest
         let sortedKeys = grouped.keys.sorted(by: >)
         
-        // Format the key into a String like "Januar 2026" with German month names
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "de_DE")
-        formatter.dateFormat = "LLLL yyyy"
-
         return sortedKeys.map { key in
             // Sort the shifts within the month from newest to oldest
-            let sortedShifts = grouped[key]!.sorted { $0.date > $1.date }
-            return (formatter.string(from: key), sortedShifts)
+            let sortedShifts = (grouped[key] ?? []).sorted { $0.date > $1.date }
+            // Month name in the device language, e.g. "Januar 2026"
+            return (key.formatted(.dateTime.month(.wide).year()), sortedShifts)
         }
     }
     
     private func headerText(for group: (month: String, shifts: [Shift])) -> String {
         let tot = group.shifts.reduce(0) { $0 + $1.totalEarnings }
         let tip = group.shifts.reduce(0) { $0 + $1.tip }
-        let f = { (v: Double) in String(format: "%.2f€", v) }
+        let f = { (v: Double) in v.currency(currencyCode) }
         return "\(group.month) - \(f(tot))\n\(f(tot - tip)) • \(f(tip))"
     }
     
     private var totalHours: Double {
         shifts.filter { !$0.isArchived }
-            .reduce(0) { $0 + durationInHours(from: $1.startTime, to: $1.endTime) }
+            .reduce(0) { $0 + $1.workedHours }
     }
 
     private var totalHoursFormatted: String {

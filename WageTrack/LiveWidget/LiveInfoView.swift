@@ -10,6 +10,7 @@ import SwiftUI
 
 struct LiveInfoView: View {
     var liveManager: LiveShiftManager
+    @AppStorage(AppSettings.Keys.currencyCode) private var currencyCode = AppSettings.systemCurrencyCode
 
     var body: some View {
         if liveManager.isTracking, let startTime = liveManager.startTime {
@@ -24,9 +25,9 @@ struct LiveInfoView: View {
                         VPTimestampView(date: startTime, color: Color(.red))
 
                         VStack(alignment: .leading) {
-                            Text(durationInTimeString(from: startTime, to: context.date))
+                            Text(elapsedTimeString(from: startTime, to: context.date))
                                 .font(.headline)
-                            Text("Lohn: \(liveManager.hourlyWage, specifier: "%.2f")€/h")
+                            Text("Lohn: \(liveManager.hourlyWage.currency(currencyCode))/h")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -49,7 +50,7 @@ struct LiveInfoView: View {
                             hourlyWage: liveManager.hourlyWage,
                             at: context.date
                         )
-                        Text("\(earnings, specifier: "%.2f") €")
+                        Text(earnings.currency(currencyCode))
                             .fontWeight(.bold)
                             .foregroundStyle(.green)
                     }

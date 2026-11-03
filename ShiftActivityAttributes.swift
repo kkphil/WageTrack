@@ -22,6 +22,8 @@ nonisolated struct ShiftActivityAttributes: ActivityAttributes {
     // Statische Daten, die beim Start feststehen
     var startTime: Date
     var hourlyWage: Double
+    /// ISO-Code der Währung, in der der Verdienst angezeigt wird (z.B. "EUR")
+    var currencyCode: String
 }
 
 nonisolated extension ShiftActivityAttributes {
@@ -30,6 +32,7 @@ nonisolated extension ShiftActivityAttributes {
 
     /// Verdienst seit `startTime` bis `date`, abgerundet auf volle Cent.
     static func earnings(since startTime: Date, hourlyWage: Double, at date: Date = .now) -> Double {
+        guard hourlyWage.isFinite, hourlyWage > 0 else { return 0 }
         let hours = max(0, date.timeIntervalSince(startTime)) / 3_600
         return (hours * hourlyWage * 100).rounded(.down) / 100
     }
@@ -44,7 +47,9 @@ nonisolated extension ShiftActivityAttributes {
 
     /// Gehört eine Activity zu dieser Schicht? (Zeitstempel mit Toleranz, da sie kodiert wurden)
     func describesSameShift(as other: ShiftActivityAttributes) -> Bool {
-        abs(startTime.timeIntervalSince(other.startTime)) < 1 && hourlyWage == other.hourlyWage
+        abs(startTime.timeIntervalSince(other.startTime)) < 1
+            && hourlyWage == other.hourlyWage
+            && currencyCode == other.currencyCode
     }
 }
 
@@ -55,13 +60,15 @@ nonisolated extension ShiftActivityAttributes {
 
 nonisolated extension ShiftActivityAttributes {
     enum CodingKeys: String, CodingKey {
-        case startTime, hourlyWage
+        case startTime, hourlyWage, currencyCode
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         startTime = try container.decode(Date.self, forKey: .startTime)
         hourlyWage = try container.decodeIfPresent(Double.self, forKey: .hourlyWage) ?? 0
+        currencyCode = try container.decodeIfPresent(String.self, forKey: .currencyCode)
+            ?? Locale.current.currency?.identifier ?? "EUR"
     }
 }
 
