@@ -10,14 +10,16 @@ import SwiftUI
 
 struct ListEntryView: View {
     let shift: Shift
+    @AppStorage(AppSettings.Keys.currencyCode) private var currencyCode = AppSettings.systemCurrencyCode
+
     var body: some View {
         HStack {
             VPTimestampView(date: shift.date)
             
             VStack(alignment: .leading) {
-                Text(durationInTimeString(from: shift.startTime, to: shift.endTime))
+                Text(durationInTimeString(from: shift.startTime, to: shift.endTime, breakMinutes: shift.breakMinutes))
                     .font(.headline)
-                Text("Lohn: \(effectiveHourlyWage, specifier: "%.2f")€/h")
+                Text("Lohn: \(effectiveHourlyWage.currency(currencyCode))/h")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -28,15 +30,15 @@ struct ListEntryView: View {
             }
             Spacer()
     
-            Text("\(shift.totalEarnings, specifier: "%.2f")€")
+            Text(shift.totalEarnings.currency(currencyCode))
                 .fontWeight(.bold)
                 .foregroundStyle(shift.tip > 0 ? .blue : .green)
         }.opacity(shift.isArchived ? 0.4 : 1.0)
     }
 
-    // Verdienst pro Stunde inkl. Trinkgeld; bei 0 Std. Dauer (Start == Ende) den Stundenlohn anzeigen
+    // Verdienst pro Stunde inkl. Trinkgeld; ohne Arbeitszeit (Start == Ende) den Stundenlohn anzeigen
     private var effectiveHourlyWage: Double {
-        let hours = durationInHours(from: shift.startTime, to: shift.endTime) - Double((shift.breakMinutes))/60.0
+        let hours = shift.workedHours
         return hours > 0 ? shift.totalEarnings / hours : shift.hourlyWage
     }
 }
