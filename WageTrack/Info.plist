@@ -4,7 +4,7 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>phil.WageTrack.1.liveUpdate</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).liveUpdate</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Damit der Verdienst in der Live-Aktivität auch bei gesperrtem iPhone weiterzählt, bleibt WageTrack während einer laufenden Schicht über deinen ungefähren Standort aktiv. Der Standort wird nicht gespeichert oder verwendet.</string>

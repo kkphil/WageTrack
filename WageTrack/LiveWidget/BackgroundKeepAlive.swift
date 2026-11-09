@@ -18,7 +18,7 @@ final class BackgroundKeepAlive: NSObject {
     private var wantsToRun = false
     private var isUpdating = false
 
-    nonisolated private static let logger = Logger(subsystem: "phil.WageTrack.1", category: "KeepAlive")
+    nonisolated private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "WageTrack", category: "KeepAlive")
 
     override init() {
         super.init()
@@ -32,6 +32,7 @@ final class BackgroundKeepAlive: NSObject {
     /// Fragt beim ersten Mal nach der Standort-Erlaubnis. Wird sie verweigert, läuft die Schicht
     /// ganz normal weiter; der Verdienst wird dann nur aktualisiert, während die App offen ist.
     func start() {
+        guard !isUpdating else { return }
         wantsToRun = true
         switch locationManager.authorizationStatus {
         case .notDetermined:
@@ -71,7 +72,11 @@ extension BackgroundKeepAlive: CLLocationManagerDelegate {
                 if wantsToRun { startUpdates() }
             default:
                 // Erlaubnis entzogen: iOS liefert keine Updates mehr, beim erneuten Erlauben neu starten
-                isUpdating = false
+                if isUpdating {
+                    isUpdating = false
+                    locationManager.stopUpdatingLocation()
+                    locationManager.allowsBackgroundLocationUpdates = false
+                }
             }
         }
     }

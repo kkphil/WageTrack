@@ -20,7 +20,9 @@ import UIKit
 @MainActor
 @Observable
 final class LiveShiftManager {
-    nonisolated static let backgroundRefreshIdentifier = "phil.WageTrack.1.liveUpdate"
+    /// Muss zu `BGTaskSchedulerPermittedIdentifiers` in der Info.plist passen (dort ebenfalls
+    /// aus der Bundle-ID abgeleitet).
+    nonisolated static let backgroundRefreshIdentifier = "\(bundleIdentifier).liveUpdate"
     /// So oft wird der Verdienst aktualisiert, solange die App läuft (auch im Hintergrund).
     private static let updateInterval: Duration = .seconds(10)
 
@@ -41,11 +43,12 @@ final class LiveShiftManager {
     @ObservationIgnored private var backgroundTaskID = UIBackgroundTaskIdentifier.invalid
     @ObservationIgnored private let keepAlive = BackgroundKeepAlive()
 
-    nonisolated private static let logger = Logger(subsystem: "phil.WageTrack.1", category: "LiveShift")
+    nonisolated private static let bundleIdentifier = Bundle.main.bundleIdentifier ?? "WageTrack"
+    nonisolated private static let logger = Logger(subsystem: bundleIdentifier, category: "LiveShift")
 
     // Der Zustand wird in den UserDefaults gespeichert, damit er überlebt, wenn iOS die App
     // im Hintergrund beendet (passiert bei langen Schichten praktisch immer).
-    private enum Keys {
+    nonisolated private enum Keys {
         static let startTime = "liveShift.startTime"
         static let endTime = "liveShift.endTime"
         static let hourlyWage = "liveShift.hourlyWage"
@@ -57,8 +60,11 @@ final class LiveShiftManager {
 
     // MARK: - Schicht
 
-    func startShift(hourlyWage: Double) {
-        guard !isTracking else { return }
+    /// Startet eine neue Schicht. Läuft bereits eine oder wartet eine gestoppte Schicht noch
+    /// aufs Speichern, passiert nichts – sie würde sonst überschrieben.
+    @discardableResult
+    func startShift(hourlyWage: Double) -> Bool {
+        guard startTime == nil, hourlyWage.isFinite, hourlyWage >= 0 else { return false }
         startTime = .now
         endTime = nil
         self.hourlyWage = hourlyWage
@@ -66,13 +72,15 @@ final class LiveShiftManager {
         syncActivity()
         startUpdateLoop()
         updateKeepAlive()
+        return true
     }
 
     /// Stoppt die Schicht sofort. Sie bleibt als offene Schicht erhalten, bis sie gespeichert
     /// oder verworfen wurde; die Live Activity wird im Hintergrund beendet.
     func stopShift() {
-        guard isTracking else { return }
-        endTime = .now
+        guard isTracking, let startTime else { return }
+        // Nie vor dem Start enden, auch wenn die Uhr inzwischen zurückgestellt wurde
+        endTime = max(.now, startTime)
         persist()
         stopUpdateLoop()
         keepAlive.stop()
@@ -93,6 +101,10 @@ final class LiveShiftManager {
 
     /// Muss aufgerufen werden, wenn die App in den Vordergrund kommt.
     func appDidBecomeActive() {
+        // Wurde die App vor dem ersten Entsperren gestartet, waren die UserDefaults noch nicht lesbar
+        if startTime == nil {
+            restore()
+        }
         // Stellt auch eine Activity wieder her, die iOS inzwischen beendet hat
         syncActivity()
         if isTracking {
@@ -249,6 +261,17 @@ final class LiveShiftManager {
     nonisolated static func refreshActivitiesInBackground() async {
         let activities = Activity<ShiftActivityAttributes>.activities.filter(\.isRunning)
         guard !activities.isEmpty else { return }
+
+        let defaults = UserDefaults.standard
+        let isTracking = defaults.object(forKey: Keys.startTime) is Date && defaults.object(forKey: Keys.endTime) == nil
+        guard isTracking else {
+            // Die Schicht wurde gestoppt, aber die App beendet, bevor die Activity entfernt war
+            for activity in activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+            return
+        }
+
         for activity in activities {
             await activity.update(activity.attributes.content())
         }
@@ -266,20 +289,22 @@ final class LiveShiftManager {
 
     private func restore() {
         let defaults = UserDefaults.standard
-        startTime = defaults.object(forKey: Keys.startTime) as? Date
-        endTime = defaults.object(forKey: Keys.endTime) as? Date
-        if let wage = defaults.object(forKey: Keys.hourlyWage) as? Double {
-            hourlyWage = wage
+        guard let storedStart = defaults.object(forKey: Keys.startTime) as? Date else {
+            // Keine Schicht gespeichert. Eine eventuell noch laufende Activity ist ein Überbleibsel
+            // und wird beim nächsten Abgleich beendet.
+            startTime = nil
+            endTime = nil
+            return
         }
 
-        // Fallback: Es läuft noch eine Activity, aber der gespeicherte Zustand fehlt
-        if startTime == nil,
-           let activity = Activity<ShiftActivityAttributes>.activities.first(where: \.isRunning),
-           activity.attributes.hourlyWage > 0 {
-            startTime = activity.attributes.startTime
-            hourlyWage = activity.attributes.hourlyWage
-            persist()
-        }
+        let storedWage = defaults.object(forKey: Keys.hourlyWage) as? Double ?? 0
+        hourlyWage = storedWage.isFinite && storedWage >= 0 ? storedWage : 0
+
+        // Unplausible Zeiten korrigieren (Uhr wurde verstellt): Der Start liegt nie in der
+        // Zukunft, das Ende nie vor dem Start.
+        let start = min(storedStart, .now)
+        startTime = start
+        endTime = (defaults.object(forKey: Keys.endTime) as? Date).map { max($0, start) }
     }
 }
 
